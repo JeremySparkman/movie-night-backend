@@ -101,5 +101,5 @@ func main() {
 	go handleMessages()
 
 	fmt.Println("Server starting...")
-	log.Fatal(http.ListenAndServe(":443", nil))
+	log.Fatal(http.ListenAndServe(":80", nil))
 }
