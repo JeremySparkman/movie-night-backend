@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/gorilla/handlers"
 	"github.com/gorilla/websocket"
 )
 
@@ -16,12 +17,23 @@ type Vote struct {
 }
 
 var (
-	voteCounts = make(map[string]int)
-	voters     = make(map[string]bool)
-	mutex      sync.Mutex
-	clients    = make(map[*websocket.Conn]bool)
-	broadcast  = make(chan map[string]interface{})
-	upgrader   = websocket.Upgrader{}
+	allowedOrigins = []string{"http://localhost:3000"}
+	voteCounts     = make(map[string]int)
+	voters         = make(map[string]bool)
+	mutex          sync.Mutex
+	clients        = make(map[*websocket.Conn]bool)
+	broadcast      = make(chan map[string]interface{})
+	upgrader       = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+
+			for _, allowedOrigin := range allowedOrigins {
+				if origin == allowedOrigin {
+					return true
+				}
+			}
+			return false
+		}}
 )
 
 func voteHandler(w http.ResponseWriter, r *http.Request) {
@@ -83,7 +95,6 @@ func handleMessages() {
 		mutex.Lock()
 		for client := range clients {
 			err := client.WriteJSON(update)
-			fmt.Printf(client.LocalAddr().String())
 			if err != nil {
 				log.Printf("error: %v", err)
 				client.Close()
@@ -95,11 +106,15 @@ func handleMessages() {
 }
 
 func main() {
-	http.HandleFunc("/vote", voteHandler)
-	http.HandleFunc("/ws", handleConnections)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", handleConnections)
+	mux.HandleFunc("/vote", voteHandler)
 
 	go handleMessages()
 
 	fmt.Println("Server starting...")
-	log.Fatal(http.ListenAndServe(":80", nil))
+	corsOptions := handlers.AllowedOrigins(allowedOrigins)
+	corsMethods := handlers.AllowedMethods([]string{"GET", "POST", "OPTIONS"})
+	corsHeaders := handlers.AllowedHeaders([]string{"Content-Type"})
+	log.Fatal(http.ListenAndServe(":80", handlers.CORS(corsOptions, corsMethods, corsHeaders)(mux)))
 }
