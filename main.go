@@ -12,17 +12,21 @@ import (
 )
 
 type Vote struct {
-	Voter string `json:"voter"`
-	Score string `json:"score"`
+	Voter string  `json:"voter"`
+	Score *string `json:"score"`
+}
+
+type Event struct {
+	Type string          `json:"type"`
+	Data map[string]Vote `json:"data"`
 }
 
 var (
-	allowedOrigins = []string{"http://localhost:3000"}
-	voteCounts     = make(map[string]int)
-	voters         = make(map[string]bool)
+	allowedOrigins = []string{"http://localhost:3000", ""}
+	voters         = make(map[string]Vote)
 	mutex          sync.Mutex
 	clients        = make(map[*websocket.Conn]bool)
-	broadcast      = make(chan map[string]interface{})
+	broadcast      = make(chan string)
 	upgrader       = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			origin := r.Header.Get("Origin")
@@ -36,10 +40,10 @@ var (
 		}}
 )
 
-func voteHandler(w http.ResponseWriter, r *http.Request) {
+func eventHandler(w http.ResponseWriter, r *http.Request) {
 	var vote Vote
 	err := json.NewDecoder(r.Body).Decode(&vote)
-	if err != nil || vote.Voter == "" || vote.Score == "" {
+	if err != nil || vote.Voter == "" {
 		http.Error(w, "Invalid vote data", http.StatusBadRequest)
 		return
 	}
@@ -47,21 +51,23 @@ func voteHandler(w http.ResponseWriter, r *http.Request) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	if voters[vote.Voter] {
-		http.Error(w, "Voter has already voted", http.StatusForbidden)
+	voters[vote.Voter] = Vote{
+		Voter: vote.Voter,
+		Score: vote.Score,
+	}
+
+	event := Event{
+		Type: "update",
+		Data: voters,
+	}
+
+	eventBytes, err := json.Marshal(event)
+	if err != nil {
+		fmt.Println("Error marshaling voters to JSON:", err)
 		return
 	}
 
-	voteCounts[vote.Score]++
-	voters[vote.Voter] = true
-
-	update := map[string]interface{}{
-		"voter":  vote.Voter,
-		"score":  vote.Score,
-		"counts": voteCounts,
-	}
-
-	broadcast <- update
+	broadcast <- string(eventBytes)
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -78,7 +84,8 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	mutex.Unlock()
 
 	for {
-		_, _, err := ws.ReadMessage()
+		_, message, err := ws.ReadMessage()
+		broadcast <- string(message)
 		if err != nil {
 			mutex.Lock()
 			delete(clients, ws)
@@ -94,7 +101,7 @@ func handleMessages() {
 
 		mutex.Lock()
 		for client := range clients {
-			err := client.WriteJSON(update)
+			err := client.WriteMessage(websocket.TextMessage, []byte(update))
 			if err != nil {
 				log.Printf("error: %v", err)
 				client.Close()
@@ -108,7 +115,7 @@ func handleMessages() {
 func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", handleConnections)
-	mux.HandleFunc("/vote", voteHandler)
+	mux.HandleFunc("/event", eventHandler)
 
 	go handleMessages()
 
