@@ -72,6 +72,21 @@ func eventHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func statusHandler(w http.ResponseWriter, r *http.Request) {
+	event := Event{
+		Type: "status",
+		Data: voters,
+	}
+	statusBytes, err := json.Marshal(event)
+	if err != nil {
+		fmt.Println("Error marshaling status to JSON:", err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write(statusBytes)
+}
+
 func handleConnections(w http.ResponseWriter, r *http.Request) {
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -116,6 +131,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", handleConnections)
 	mux.HandleFunc("/event", eventHandler)
+	mux.HandleFunc("/status", statusHandler)
 
 	go handleMessages()
 
