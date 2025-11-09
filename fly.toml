@@ -1,17 +1,12 @@
-# fly.toml app configuration file generated for movie-night-backend on 2025-11-09T01:04:28Z
+# fly.toml app configuration file generated for movie-night-backend on 2025-11-09T01:19:36Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
 app = 'movie-night-backend'
-primary_region = 'bos'
+primary_region = 'ord'
 
 [build]
-  [build.args]
-    GO_VERSION = '1.23.2'
-
-[env]
-  PORT = '8080'
 
 [http_service]
   internal_port = 8080
