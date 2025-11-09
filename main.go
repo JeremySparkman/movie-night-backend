@@ -7,43 +7,47 @@ import (
 	"net/http"
 	"sync"
 
+	"slices"
+
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/websocket"
 )
 
 type Vote struct {
-	Voter string  `json:"voter"`
+	Room  string  `json:"room"`
 	Score *string `json:"score"`
+	Voter string  `json:"voter"`
 }
 
 type Event struct {
-	Type string          `json:"type"`
-	Data map[string]Vote `json:"data"`
+	Data Room   `json:"data"`
+	Type string `json:"type"`
+}
+
+type Room struct {
+	Voters map[string]Vote `json:"voters"`
 }
 
 var (
-	allowedOrigins = []string{"http://localhost:3000", ""}
-	voters         = make(map[string]Vote)
-	mutex          sync.Mutex
-	clients        = make(map[*websocket.Conn]bool)
+	allowedOrigins = []string{"http://localhost:3000", "https://movie-knights-inky.vercel.app/"}
 	broadcast      = make(chan string)
+	clients        = make(map[*websocket.Conn]bool)
+	mutex          sync.Mutex
+	rooms          = make(map[string]Room)
 	upgrader       = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			origin := r.Header.Get("Origin")
 
-			for _, allowedOrigin := range allowedOrigins {
-				if origin == allowedOrigin {
-					return true
-				}
-			}
-			return false
+			return slices.Contains(allowedOrigins, origin)
 		}}
 )
 
 func eventHandler(w http.ResponseWriter, r *http.Request) {
 	var vote Vote
 	err := json.NewDecoder(r.Body).Decode(&vote)
+
 	if err != nil || vote.Voter == "" {
+		fmt.Println(vote)
 		http.Error(w, "Invalid vote data", http.StatusBadRequest)
 		return
 	}
@@ -51,17 +55,19 @@ func eventHandler(w http.ResponseWriter, r *http.Request) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	voters[vote.Voter] = Vote{
+	room, exists := rooms[vote.Room]
+	if !exists {
+		room = Room{Voters: make(map[string]Vote)}
+	}
+	room.Voters[vote.Voter] = Vote{
 		Voter: vote.Voter,
 		Score: vote.Score,
+		Room:  vote.Room,
 	}
+	rooms[vote.Room] = room
 
-	event := Event{
-		Type: "update",
-		Data: voters,
-	}
+	eventBytes, err := json.Marshal(rooms)
 
-	eventBytes, err := json.Marshal(event)
 	if err != nil {
 		fmt.Println("Error marshaling voters to JSON:", err)
 		return
@@ -72,11 +78,43 @@ func eventHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func roomsHandler(w http.ResponseWriter, r *http.Request) {
+	mutex.Lock()
+	names := make([]string, 0, len(rooms))
+	for name := range rooms {
+		names = append(names, name)
+	}
+	mutex.Unlock()
+
+	response := struct {
+		Type  string   `json:"type"`
+		Rooms []string `json:"rooms"`
+	}{
+		Type:  "rooms",
+		Rooms: names,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Error encoding response", http.StatusInternalServerError)
+		return
+	}
+}
+
 func statusHandler(w http.ResponseWriter, r *http.Request) {
+	var room string
+	err := json.NewDecoder(r.Body).Decode(&room)
+
+	if err != nil || room == "" {
+		http.Error(w, "Invalid room data", http.StatusBadRequest)
+		return
+	}
+
 	event := Event{
 		Type: "status",
-		Data: voters,
+		Data: rooms[room],
 	}
+
 	statusBytes, err := json.Marshal(event)
 	if err != nil {
 		fmt.Println("Error marshaling status to JSON:", err)
@@ -131,6 +169,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", handleConnections)
 	mux.HandleFunc("/event", eventHandler)
+	mux.HandleFunc("/rooms", roomsHandler)
 	mux.HandleFunc("/status", statusHandler)
 
 	go handleMessages()
