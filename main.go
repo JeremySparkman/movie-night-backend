@@ -30,7 +30,7 @@ type Room struct {
 }
 
 var (
-	allowedOrigins = []string{"http://localhost:3000", "https://movie-knights-inky.vercel.app/"}
+	allowedOrigins = []string{"http://localhost:3000", "https://movie-knights-inky.vercel.app"}
 	broadcast      = make(chan string)
 	clients        = make(map[*websocket.Conn]bool)
 	mutex          sync.Mutex
@@ -179,10 +179,11 @@ func main() {
 	corsOptions := handlers.AllowedOrigins(allowedOrigins)
 	corsMethods := handlers.AllowedMethods([]string{"GET", "POST", "OPTIONS"})
 	corsHeaders := handlers.AllowedHeaders([]string{"Content-Type"})
+	corsCredentials := handlers.AllowCredentials()
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "80"
 	}
-	log.Fatal(http.ListenAndServe(":"+port, handlers.CORS(corsOptions, corsMethods, corsHeaders)(mux)))
+	log.Fatal(http.ListenAndServe(":"+port, handlers.CORS(corsOptions, corsMethods, corsHeaders, corsCredentials)(mux)))
 }
