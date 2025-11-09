@@ -4,7 +4,7 @@
 #
 
 app = 'movie-night-backend'
-primary_region = 'bos'
+primary_region = 'ord'
 
 [build]
   [build.args]
