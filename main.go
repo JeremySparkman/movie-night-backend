@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 
 	"slices"
@@ -178,5 +179,10 @@ func main() {
 	corsOptions := handlers.AllowedOrigins(allowedOrigins)
 	corsMethods := handlers.AllowedMethods([]string{"GET", "POST", "OPTIONS"})
 	corsHeaders := handlers.AllowedHeaders([]string{"Content-Type"})
-	log.Fatal(http.ListenAndServe(":80", handlers.CORS(corsOptions, corsMethods, corsHeaders)(mux)))
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "80"
+	}
+	log.Fatal(http.ListenAndServe(":"+port, handlers.CORS(corsOptions, corsMethods, corsHeaders)(mux)))
 }
